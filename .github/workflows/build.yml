@@ -17,14 +17,14 @@ jobs:
       - name: Setup Android SDK
         run: |
           if (-not (Test-Path env:ANDROID_SDK_ROOT)) {
-            $env:ANDROID_SDK_ROOT = "C:\Android\android-sdk"
+            $env:ANDROID_SDK_ROOT = "C:\Users\Administrator\AppData\Local\Android\Sdk"
           }
-        shell: powershell
+          echo "SDK Root: $env:ANDROID_SDK_ROOT"
 
       - name: Build
         run: |
           Remove-Item local.properties -ErrorAction SilentlyContinue
-          "sdk.dir=C:\Android\android-sdk" | Out-File -FilePath local.properties -Encoding ASCII
+          "sdk.dir=C:\Users\Administrator\AppData\Local\Android\Sdk" | Out-File -FilePath local.properties -Encoding ASCII
           Get-Content local.properties
           & cmd /c "gradlew.bat assembleDebug --no-daemon 2>&1"
         shell: powershell
