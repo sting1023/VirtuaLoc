@@ -15,18 +15,14 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        run: |
-          if (-not (Test-Path env:ANDROID_SDK_ROOT)) {
-            $env:ANDROID_SDK_ROOT = "C:\Users\Administrator\AppData\Local\Android\Sdk"
-          }
-          echo "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT"
+        uses: android-actions/setup-android@v2
 
       - name: Build
         run: |
-          $sdk = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { "C:\Users\Administrator\AppData\Local\Android\Sdk" }
-          echo "sdk.dir=$sdk" | Out-File -FilePath local.properties -Encoding ASCII
-          Get-Content local.properties
-          .\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-Object -Last 60
+          cmd /c "echo sdk.dir=%ANDROID_SDK_ROOT% > local.properties"
+          cmd /c "type local.properties"
+          cmd /c "gradlew.bat assembleDebug --no-daemon"
+        working-directory: ${{ github.workspace }}
 
       - uses: actions/upload-artifact@v4
         if: success()
