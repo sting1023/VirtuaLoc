@@ -12,9 +12,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
@@ -30,51 +30,20 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug --no-daemon
 
-      - name: Create Release
-        id: create_release
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const apkPath = 'app/build/outputs/apk/debug/app-debug.apk';
-            if (!fs.existsSync(apkPath)) {
-              core.setFailed('APK not found at ' + apkPath);
-              return;
-            }
-            const stats = fs.statSync(apkPath);
-            console.log('APK size:', stats.size);
-            const release = await github.rest.repos.createRelease({
-              owner: 'sting1023',
-              repo: 'VirtuaLoc',
-              tag_name: 'v1.2-build' + Date.now(),
-              name: 'VirtuaLoc v1.2 Debug',
-              draft: false,
-              prerelease: false
-            });
-            core.setOutput('release_id', release.data.id);
-            core.setOutput('upload_url', release.data.upload_url);
+      - name: Find APK files
+        run: |
+          echo "=== Looking for APK files ==="
+          find . -name "*.apk" -type f 2>/dev/null
+          echo "=== app/build/outputs ==="
+          ls -la app/build/outputs/ 2>/dev/null || echo "No outputs dir"
+          echo "=== app/build/outputs/apk ==="
+          ls -la app/build/outputs/apk/ 2>/dev/null || echo "No apk dir"
+          echo "=== app/build/outputs/apk/debug ==="
+          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No debug dir"
 
-      - name: Upload APK to Release
-        uses: actions/github-script@v7
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const fs = require('fs');
-            const path = require('path');
-            const apkPath = 'app/build/outputs/apk/debug/app-debug.apk';
-            const releaseId = '${{ steps.create_release.outputs.release_id }}';
-            const uploadUrl = '${{ steps.create_release.outputs.upload_url }}'.replace('{?name,label}', '');
-            console.log('Uploading to:', uploadUrl);
-            const apkBuffer = fs.readFileSync(apkPath);
-            const response = await fetch(uploadUrl + '?name=virtualloc-debug.apk', {
-              method: 'POST',
-              headers: {
-                'Authorization': 'Bearer ${{ secrets.GITHUB_TOKEN }}',
-                'Content-Type': 'application/octet-stream',
-                'Content-Length': apkBuffer.length
-              },
-              body: apkBuffer
-            });
-            console.log('Upload status:', response.status);
-            const data = await response.json();
-            console.log('Uploaded:', data.browser_download_url);
+          name: virtualloc-debug
+          path: app/build/outputs/apk/debug
+          retention-days: 1
