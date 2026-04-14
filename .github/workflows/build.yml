@@ -5,14 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
 
       - uses: actions/setup-java@v4
         with:
@@ -45,7 +46,7 @@ jobs:
           git config --local user.name "bot"
           git add app/keystore.jks
           git commit -m "chore: add keystore for signing (keep for app updates)"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/sting1023/VirtuaLoc.git main
+          git push origin main
 
       - name: Make gradlew executable
         run: chmod +x gradlew
