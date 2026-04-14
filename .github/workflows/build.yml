@@ -21,7 +21,7 @@ jobs:
       - name: Build
         run: |
           echo "sdk.dir=$env:ANDROID_SDK_ROOT" | Out-File -FilePath local.properties -Encoding ASCII
-          ./gradlew assembleDebug --no-daemon 2>&1
+          .\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-Object -Last 50
 
       - uses: actions/upload-artifact@v4
         with:
