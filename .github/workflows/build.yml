@@ -16,9 +16,14 @@ jobs:
 
       - name: Build
         run: |
-          echo "sdk.dir=%ANDROID_SDK_ROOT%" > local.properties
-          bash ./gradlew assembleDebug --no-daemon 2>&1
-        shell: bash
+          if exist "C:\Users\Administrator\AppData\Local\Android\Sdk" (
+            echo sdk.dir=C:\Users\Administrator\AppData\Local\Android\Sdk > local.properties
+          ) else (
+            echo sdk.dir=%ANDROID_SDK_ROOT% > local.properties
+          )
+          type local.properties
+          .\gradlew.bat assembleDebug --no-daemon 2>&1
+        shell: cmd
 
       - uses: actions/upload-artifact@v4
         if: success()
