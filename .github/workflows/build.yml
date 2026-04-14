@@ -24,9 +24,10 @@ jobs:
           cat local.properties
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon 2>&1
+          find . -name "*.apk" -type f 2>/dev/null
 
-      - uses: actions/upload-artifact@v4
-        if: success()
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
           name: virtualloc-debug
           path: app/build/outputs/apk/debug/virtualloc-debug.apk
