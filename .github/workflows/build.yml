@@ -11,6 +11,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-java@v4
         with:
@@ -22,50 +24,40 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
-      - name: Prepare keystore
-        id: prepare-keystore
+      - name: Generate keystore if not exists
         run: |
-          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/keystore.jks
-            echo "mode=restore"
+          if [ ! -f app/keystore.jks ]; then
+            echo "Generating new keystore..."
+            keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass VirtuaLoc2026 -keypass VirtuaLoc2026 \
+              -dname "CN=sting, OU=dev, O=sting, L=Beijing, C=CN"
+            echo "keystore_generated=true" >> $GITHUB_ENV
           else
-            echo "mode=generate"
+            echo "Using existing keystore"
+            echo "keystore_generated=false" >> $GITHUB_ENV
           fi
 
-      - name: Generate keystore
-        if: steps.prepare-keystore.outputs.mode == 'generate'
+      - name: Commit keystore to repo
+        if: env.keystore_generated == 'true'
         run: |
-          keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass virtualloc2026 -keypass virtualloc2026 \
-            -dname "CN=sting, OU=dev, O=sting, L=Beijing, C=CN"
-
-      - name: Upload keystore as secret
-        if: steps.prepare-keystore.outputs.mode == 'generate'
-        run: |
-          NEW_KEYSTORE=$(base64 -w0 app/keystore.jks)
-          curl -s -X PUT \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            https://api.github.com/repos/sting1023/VirtuaLoc/actions/secrets/KEYSTORE_BASE64 \
-            -d "{\"encrypted_value\":\"${NEW_KEYSTORE}\",\"key_id\":\"\"}"
+          git config --local user.email "bot@openclaw"
+          git config --local user.name "bot"
+          git add app/keystore.jks
+          git commit -m "chore: add keystore for signing (keep for app updates)"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/sting1023/VirtuaLoc.git main
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build debug APK
-        env:
-          KEYSTORE_FILE: app/keystore.jks
-          KEYSTORE_PASSWORD: virtualloc2026
-          KEY_ALIAS: appkey
-          KEY_PASSWORD: virtualloc2026
         run: |
-          if [ -f "$KEYSTORE_FILE" ]; then
+          if [ -f app/keystore.jks ]; then
             ./gradlew assembleDebug --no-daemon --no-build-cache \
-              -PkeystoreFile="$KEYSTORE_FILE" \
-              -PkeystorePassword="$KEYSTORE_PASSWORD" \
-              -PkeyAlias="$KEY_ALIAS" \
-              -PkeyPassword="$KEY_PASSWORD" 2>&1
+              -PkeystoreFile=app/keystore.jks \
+              -PkeystorePassword=VirtuaLoc2026 \
+              -PkeyAlias=appkey \
+              -PkeyPassword=VirtuaLoc2026 2>&1
           else
             ./gradlew assembleDebug --no-daemon --no-build-cache 2>&1
           fi
