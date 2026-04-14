@@ -22,15 +22,6 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Generate keystore
-        run: |
-          mkdir -p app
-          keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass VirtuaLoc2026 -keypass VirtuaLoc2026 \
-            -dname "CN=sting, OU=dev, O=sting, L=Beijing, C=CN"
-          echo "keystore_exists=true" >> $GITHUB_ENV
-
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
@@ -39,17 +30,17 @@ jobs:
 
       - name: Build debug APK
         run: |
-          ./gradlew assembleDebug --no-daemon --rerun-tasks 2>&1 | tee build.log
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
           echo "=== APK location ==="
-          find . -name "*.apk" -type f 2>/dev/null
+          find . -name "*.apk" -type f
 
       - name: Check APK
         if: always()
         run: |
           echo "=== APK files ==="
-          find . -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "No APK found"
+          find . -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "No APK"
           echo "=== Build log tail ==="
-          tail -30 build.log
+          tail -20 build.log
 
       - name: Upload Artifact
         if: success()

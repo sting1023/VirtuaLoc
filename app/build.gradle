@@ -16,21 +16,11 @@ android {
         vectorDrawables.useSupportLibrary = true
     }
 
-    signingConfigs {
-        release {
-            storeFile rootProject.file('app/keystore.jks')
-            storePassword 'VirtuaLoc2026'
-            keyAlias 'appkey'
-            keyPassword 'VirtuaLoc2026'
-        }
-    }
-
     buildTypes {
         debug {
-            signingConfig signingConfigs.release
+            debuggable true
         }
         release {
-            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
