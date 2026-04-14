@@ -16,14 +16,20 @@ jobs:
 
       - name: Setup Android SDK
         run: |
-          if (-not (Test-Path env:ANDROID_SDK_ROOT)) { $env:ANDROID_SDK_ROOT = "C:\android-sdk" }
+          if (-not (Test-Path env:ANDROID_SDK_ROOT)) {
+            $env:ANDROID_SDK_ROOT = "C:\Users\Administrator\AppData\Local\Android\Sdk"
+          }
+          echo "ANDROID_SDK_ROOT=$env:ANDROID_SDK_ROOT"
 
       - name: Build
         run: |
-          echo "sdk.dir=$env:ANDROID_SDK_ROOT" | Out-File -FilePath local.properties -Encoding ASCII
-          .\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-Object -Last 50
+          $sdk = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { "C:\Users\Administrator\AppData\Local\Android\Sdk" }
+          echo "sdk.dir=$sdk" | Out-File -FilePath local.properties -Encoding ASCII
+          Get-Content local.properties
+          .\gradlew.bat assembleDebug --no-daemon 2>&1 | Select-Object -Last 60
 
       - uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: virtualloc-debug
           path: app/build/outputs/apk/debug/virtualloc-debug.apk
