@@ -23,21 +23,11 @@ jobs:
           echo "sdk.dir=$env:ANDROID_SDK_ROOT" | Out-File -FilePath local.properties -Encoding ASCII
           ./gradlew assembleDebug --no-daemon
 
-      - name: Upload to Release
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+          prerelease: false
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = "v1.2-build" + [DateTimeOffset]::Now.ToUnixTimeMilliseconds()
-          $body = @{
-            tag_name = $tag
-            name = "VirtuaLoc $tag"
-            draft = $false
-            prerelease = $false
-          } | ConvertTo-Json
-          $resp = Invoke-RestMethod -Uri "https://api.github.com/repos/sting1023/VirtuaLoc/releases" -Method POST -Body $body -Headers @{Authorization="token $env:GH_TOKEN"; Accept="application/vnd.github.v3+json"} -ContentType "application/json"
-          Write-Host "Created release ID: $($resp.id) Upload URL: $($resp.upload_url)"
-          $uploadUrl = $resp.upload_url -replace '\{.*', ''
-          $apkPath = "app/build/outputs/apk/debug/app-debug.apk"
-          Write-Host "APK size: $((Get-Item $apkPath).Length)"
-          Invoke-RestMethod -Uri "$uploadUrl?name=virtualloc-debug.apk" -Method POST -InFile $apkPath -Headers @{Authorization="token $env:GH_TOKEN"; Content-Type="application/octet-stream"}
-          Write-Host "Upload complete"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
