@@ -21,16 +21,14 @@ jobs:
         run: |
           export ANDROID_HOME=${ANDROID_HOME:-/opt/android-sdk}
           echo "sdk.dir=$ANDROID_HOME" > local.properties
-          cat local.properties
           chmod +x ./gradlew
           ./gradlew assembleDebug --no-daemon 2>&1
-          find . -name "*.apk" -type f
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v1
         with:
-          name: virtualloc-debug
-          path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 1
-          overwrite: true
+          files: app/build/outputs/apk/debug/app-debug.apk
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
