@@ -3,6 +3,9 @@ name: Build APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -16,30 +19,41 @@ jobs:
 
       - name: Setup Android SDK
         run: |
-          if (-not (Test-Path env:ANDROID_SDK_ROOT)) { $env:ANDROID_SDK_ROOT = "C:\android-sdk" }
+          if (-not (Test-Path env:ANDROID_SDK_ROOT)) { $env:ANDROID_SDK_ROOT = "C:\\android-sdk" }
 
       - name: Build
         run: |
           echo "sdk.dir=$env:ANDROID_SDK_ROOT" | Out-File -FilePath local.properties -Encoding ASCII
           ./gradlew assembleDebug --no-daemon
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v1.2-build${{ github.run_number }}
-          release_name: VirtuaLoc v1.2 Build ${{ github.run_number }}
-          draft: false
-          prerelease: false
+      - name: Encode APK as base64
+        run: |
+          $apkBytes = [System.IO.File]::ReadAllBytes("app/build/outputs/apk/debug/app-debug.apk")
+          $apkBase64 = [Convert]::ToBase64String($apkBytes)
+          echo "APK_BASE64=$apkBase64" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding UTF8
+          Write-Host "APK base64 length: $($apkBase64.Length)"
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
+  download:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download base64 from build job
+        run: |
+          echo "Waiting for build job..."
+          echo "::notice::Build completed, APK encoded as base64"
+
+      - name: Upload APK directly via GitHub API
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: app/build/outputs/apk/debug/app-debug.apk
-          asset_name: virtualloc-debug.apk
-          asset_content_type: application/vnd.android.package-archive
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK_BASE64="${{ needs.build.outputs.APK_BASE64 }}"
+          if [ -z "$APK_BASE64" ]; then
+            echo "No base64 data available"
+            exit 1
+          fi
+          echo "$APK_BASE64" | base64 -d > virtualloc-debug.apk
+          ls -lh virtualloc-debug.apk
+          
+          # Create release via GitHub CLI
+          tag="v1.2-$(date +%s)"
+          gh release create "$tag" virtualloc-debug.apk --repo sting1023/VirtuaLoc --title "VirtuaLoc $tag"
