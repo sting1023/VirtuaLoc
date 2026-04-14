@@ -19,9 +19,15 @@ jobs:
           export ANDROID_SDK_ROOT=/opt/android-sdk
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -50
+          ./gradlew assembleDebug --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - name: Check APK
+        run: ls -la app/build/outputs/apk/debug/
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: virtualloc
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+          timeout-minutes: 5
