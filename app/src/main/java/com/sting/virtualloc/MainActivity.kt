@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
+import androidx.compose.material3.Divider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -575,7 +576,7 @@ fun MainScreen() {
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider()
+            Divider()
             Spacer(modifier = Modifier.height(8.dp))
 
             // Quick select section
