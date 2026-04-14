@@ -22,59 +22,34 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
-      - name: Debug env
+      - name: Generate keystore
         run: |
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "JAVA_HOME=$JAVA_HOME"
-          java -version 2>&1
+          mkdir -p app
+          keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass VirtuaLoc2026 -keypass VirtuaLoc2026 \
+            -dname "CN=sting, OU=dev, O=sting, L=Beijing, C=CN"
+          echo "keystore_exists=true" >> $GITHUB_ENV
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-
-      - name: Generate keystore if not exists in app/
-        run: |
-          if [ ! -f app/keystore.jks ]; then
-            keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass VirtuaLoc2026 -keypass VirtuaLoc2026 \
-              -dname "CN=sting, OU=dev, O=sting, L=Beijing, C=CN"
-            echo "keystore_generated=true" >> $GITHUB_ENV
-          else
-            echo "Using existing keystore"
-            echo "keystore_generated=false" >> $GITHUB_ENV
-          fi
-
-      - name: Commit keystore to repo
-        if: env.keystore_generated == 'true'
-        run: |
-          git config --local user.email "bot@openclaw"
-          git config --local user.name "bot"
-          git add app/keystore.jks
-          git commit -m "chore: add keystore for signing"
-          git push origin main
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build debug APK
         run: |
-          if [ -f app/keystore.jks ]; then
-            ./gradlew assembleDebug --no-daemon --rerun-tasks \
-              -PkeystoreFile=app/keystore.jks \
-              -PkeystorePassword=VirtuaLoc2026 \
-              -PkeyAlias=appkey \
-              -PkeyPassword=VirtuaLoc2026 2>&1 | tee build.log
-          else
-            ./gradlew assembleDebug --no-daemon --rerun-tasks 2>&1 | tee build.log
-          fi
+          ./gradlew assembleDebug --no-daemon --rerun-tasks 2>&1 | tee build.log
+          echo "=== APK location ==="
+          find . -name "*.apk" -type f 2>/dev/null
 
       - name: Check APK
         if: always()
         run: |
           echo "=== APK files ==="
-          find app/build -name "*.apk" -exec ls -lh {} \;
+          find . -name "*.apk" -exec ls -lh {} \; 2>/dev/null || echo "No APK found"
           echo "=== Build log tail ==="
-          tail -50 build.log
+          tail -30 build.log
 
       - name: Upload Artifact
         if: success()
@@ -82,3 +57,4 @@ jobs:
         with:
           name: virtualloc-debug
           path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
