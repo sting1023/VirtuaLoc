@@ -22,6 +22,12 @@ jobs:
 
       - uses: android-actions/setup-android@v3
 
+      - name: Debug env
+        run: |
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          echo "JAVA_HOME=$JAVA_HOME"
+          java -version 2>&1
+
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
@@ -53,16 +59,25 @@ jobs:
       - name: Build debug APK
         run: |
           if [ -f app/keystore.jks ]; then
-            ./gradlew assembleDebug --no-daemon --no-build-cache \
+            ./gradlew assembleDebug --no-daemon --rerun-tasks \
               -PkeystoreFile=app/keystore.jks \
               -PkeystorePassword=VirtuaLoc2026 \
               -PkeyAlias=appkey \
-              -PkeyPassword=VirtuaLoc2026 2>&1
+              -PkeyPassword=VirtuaLoc2026 2>&1 | tee build.log
           else
-            ./gradlew assembleDebug --no-daemon --no-build-cache 2>&1
+            ./gradlew assembleDebug --no-daemon --rerun-tasks 2>&1 | tee build.log
           fi
 
+      - name: Check APK
+        if: always()
+        run: |
+          echo "=== APK files ==="
+          find app/build -name "*.apk" -exec ls -lh {} \;
+          echo "=== Build log tail ==="
+          tail -50 build.log
+
       - name: Upload Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: virtualloc-debug
