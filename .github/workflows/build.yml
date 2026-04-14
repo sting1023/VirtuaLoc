@@ -22,36 +22,10 @@ jobs:
         run: |
           echo "sdk.dir=$env:ANDROID_SDK_ROOT" | Out-File -FilePath local.properties -Encoding ASCII
           ./gradlew assembleDebug --no-daemon 2>&1
-          if ($LASTEXITCODE -ne 0) { Write-Host "BUILD FAILED"; exit 1 }
-          Write-Host "BUILD OK"
 
-      - name: Find APK
-        run: |
-          Get-ChildItem . -Filter "*.apk" -Recurse -File -EA SilentlyContinue | Select -Expand FullName
-
-      - name: Upload Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $apk = Get-ChildItem . -Filter "*.apk" -Recurse -File | Select -First 1
-          if (-not $apk) { Write-Host "NO APK FOUND"; exit 1 }
-          Write-Host "Found APK: $($apk.FullName) Size: $($apk.Length)"
-          
-          $tag = "v1.2-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-          $body = @{
-            tag_name = $tag
-            name = "VirtuaLoc $tag"
-            draft = $false
-            prerelease = $false
-          } | ConvertTo-Json -Compress
-          
-          $headers = @{
-            Authorization = "token $env:GH_TOKEN"
-            Accept = "application/vnd.github.v3+json"
-            "Content-Type" = "application/json"
-          }
-          
-          $createResp = Invoke-RestMethod -Uri "https://api.github.com/repos/sting1023/VirtuaLoc/releases" -Method POST -Body $body -Headers $headers
-          $uploadUrl = ($createResp.upload_url -replace '{{.*}}', '') + "?name=virtualloc-debug.apk"
-          $assetResp = Invoke-RestMethod -Uri $uploadUrl -Method POST -InFile $apk.FullName -Headers @{ Authorization = "token $env:GH_TOKEN"; "Content-Type" = "application/octet-stream" }
-          Write-Host "URL: $($assetResp.browser_download_url)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: virtualloc-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+          overwrite: true
