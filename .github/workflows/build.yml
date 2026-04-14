@@ -22,11 +22,53 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
+      - name: Prepare keystore
+        id: prepare-keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/keystore.jks
+            echo "mode=restore"
+          else
+            echo "mode=generate"
+          fi
+
+      - name: Generate keystore
+        if: steps.prepare-keystore.outputs.mode == 'generate'
+        run: |
+          keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass virtualloc2026 -keypass virtualloc2026 \
+            -dname "CN=sting, OU=dev, O=sting, L=Beijing, C=CN"
+
+      - name: Upload keystore as secret
+        if: steps.prepare-keystore.outputs.mode == 'generate'
+        run: |
+          NEW_KEYSTORE=$(base64 -w0 app/keystore.jks)
+          curl -s -X PUT \
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            https://api.github.com/repos/sting1023/VirtuaLoc/actions/secrets/KEYSTORE_BASE64 \
+            -d "{\"encrypted_value\":\"${NEW_KEYSTORE}\",\"key_id\":\"\"}"
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --no-build-cache --warning-mode=none 2>&1
+        env:
+          KEYSTORE_FILE: app/keystore.jks
+          KEYSTORE_PASSWORD: virtualloc2026
+          KEY_ALIAS: appkey
+          KEY_PASSWORD: virtualloc2026
+        run: |
+          if [ -f "$KEYSTORE_FILE" ]; then
+            ./gradlew assembleDebug --no-daemon --no-build-cache \
+              -PkeystoreFile="$KEYSTORE_FILE" \
+              -PkeystorePassword="$KEYSTORE_PASSWORD" \
+              -PkeyAlias="$KEY_ALIAS" \
+              -PkeyPassword="$KEY_PASSWORD" 2>&1
+          else
+            ./gradlew assembleDebug --no-daemon --no-build-cache 2>&1
+          fi
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

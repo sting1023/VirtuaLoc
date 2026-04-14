@@ -19,9 +19,22 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile(file("keystore.jks"))
+            storePassword("VirtuaLoc2026")
+            keyAlias("appkey")
+            keyPassword("VirtuaLoc2026")
+        }
+    }
+
     buildTypes {
+        debug {
+            // Use debug signing for easy testing
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
