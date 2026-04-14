@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -14,16 +14,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Build
         run: |
-          if exist "C:\Users\Administrator\AppData\Local\Android\Sdk" (
-            echo sdk.dir=C:\Users\Administrator\AppData\Local\Android\Sdk > local.properties
-          ) else (
-            echo sdk.dir=%ANDROID_SDK_ROOT% > local.properties
-          )
-          type local.properties
-          .\gradlew.bat assembleDebug --no-daemon 2>&1
-        shell: cmd
+          export ANDROID_HOME=${ANDROID_HOME:-/opt/android-sdk}
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          cat local.properties
+          chmod +x ./gradlew
+          ./gradlew assembleDebug --no-daemon 2>&1
 
       - uses: actions/upload-artifact@v4
         if: success()
