@@ -318,11 +318,21 @@ fun MainScreen() {
         }
     }
 
+    // Get version info
+    val versionInfo = remember {
+        try {
+            val pkg = context.packageManager.getPackageInfo(context.packageName, 0)
+            "${pkg.versionName} (${pkg.versionCode})"
+        } catch (e: Exception) {
+            "未知版本"
+        }
+    }
+
     // Dialog: Developer mode instructions
     if (state.showDeveloperDialog) {
         AlertDialog(
             onDismissRequest = { vm.hideDeveloperDialog() },
-            title = { Text("开启开发者模拟位置", fontWeight = FontWeight.Bold) },
+            title = { Text("VirtuaLoc 帮助 (v$versionInfo)", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("步骤 1: 开启开发者选项")
@@ -460,97 +470,113 @@ fun MainScreen() {
                 fontWeight = FontWeight.Bold
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OutlinedTextField(
-                    value = state.latText,
-                    onValueChange = {
-                        vm.updateLat(it)
-                        vm.saveLastCoords(it, state.lngText)
-                    },
-                    label = { Text("纬度 (-90~90)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    enabled = !state.isRunning
-                )
-                OutlinedTextField(
-                    value = state.lngText,
-                    onValueChange = {
-                        vm.updateLng(it)
-                        vm.saveLastCoords(state.latText, it)
-                    },
-                    label = { Text("经度 (-180~180)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    enabled = !state.isRunning
-                )
-                // GPS capture button with text
-                FilledTonalButton(
-                    onClick = {
-                        if (!state.hasLocationPermission) {
-                            vm.setStatus("需要位置权限")
-                            return@FilledTonalButton
-                        }
-                        vm.setGpsLoading(true)
-                        vm.setStatus("正在获取GPS坐标...")
-                        mockMgr.getCurrentLocation { lat, lng ->
-                            if (lat != null && lng != null) {
-                                vm.setGpsCoords(lat, lng)
-                                vm.setStatus("GPS坐标已获取: %.6f, %.6f".format(lat, lng))
-                            } else {
-                                vm.setGpsError()
-                                vm.setStatus("无法获取GPS坐标，请检查定位设置")
-                                Toast.makeText(context, "无法获取GPS坐标", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    },
-                    enabled = !state.isRunning && !state.gpsLoading,
-                    modifier = Modifier.height(OutlinedTextFieldDefaults.MinHeight)
+                // Row 1: Lat and Lng inputs
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (state.gpsLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("获取中")
-                    } else {
+                    OutlinedTextField(
+                        value = state.latText,
+                        onValueChange = {
+                            vm.updateLat(it)
+                            vm.saveLastCoords(it, state.lngText)
+                        },
+                        label = { Text("纬度 (-90~90)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = state.lngText,
+                        onValueChange = {
+                            vm.updateLng(it)
+                            vm.saveLastCoords(state.latText, it)
+                        },
+                        label = { Text("经度 (-180~180)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                // Row 2: Save and GPS buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Save button
+                    Button(
+                        onClick = {
+                            val lat = state.latText.toDoubleOrNull()
+                            val lng = state.lngText.toDoubleOrNull()
+                            if (lat != null && lng != null) {
+                                vm.showGpsDialog()
+                            } else {
+                                Toast.makeText(context, "请先输入有效坐标", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        enabled = !state.isRunning,
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Icon(
-                            Icons.Default.MyLocation,
-                            contentDescription = "获取当前GPS",
+                            Icons.Default.Save,
+                            contentDescription = "保存",
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("获取经纬度")
+                        Text("保存")
+                    }
+
+                    // GPS capture button
+                    FilledTonalButton(
+                        onClick = {
+                            if (!state.hasLocationPermission) {
+                                vm.setStatus("需要位置权限")
+                                return@FilledTonalButton
+                            }
+                            vm.setGpsLoading(true)
+                            vm.setStatus("正在获取GPS坐标...")
+                            mockMgr.getCurrentLocation { lat, lng ->
+                                if (lat != null && lng != null) {
+                                    vm.setGpsCoords(lat, lng)
+                                    vm.setStatus("GPS坐标已获取: %.6f, %.6f".format(lat, lng))
+                                } else {
+                                    vm.setGpsError()
+                                    vm.setStatus("无法获取GPS坐标，请检查定位设置")
+                                    Toast.makeText(context, "无法获取GPS坐标", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        enabled = !state.isRunning && !state.gpsLoading,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        if (state.gpsLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("获取中")
+                        } else {
+                            Icon(
+                                Icons.Default.MyLocation,
+                                contentDescription = "获取当前GPS",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("获取本地经纬度")
+                        }
                     }
                 }
-                // Save button next to inputs
-                Button(
-                    onClick = {
-                        val lat = state.latText.toDoubleOrNull()
-                        val lng = state.lngText.toDoubleOrNull()
-                        if (lat != null && lng != null) {
-                            vm.showGpsDialog()
-                        } else {
-                            Toast.makeText(context, "请先输入有效坐标", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    enabled = !state.isRunning
-                ) {
-                    Icon(
-                        Icons.Default.Save,
-                        contentDescription = "保存",
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("保存")
-                }
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Quick select section
             Text(
