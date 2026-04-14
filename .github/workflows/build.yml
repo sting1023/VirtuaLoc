@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -14,20 +14,19 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Setup Android SDK
+        run: brew install android-commandlinetools || true
+
       - name: Build
+        env:
+          ANDROID_SDK_ROOT: /Users/runner/Library/Android/sdk
         run: |
-          export ANDROID_SDK_ROOT=/opt/android-sdk
           echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: Check APK
-        run: ls -la app/build/outputs/apk/debug/
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: virtualloc
           path: app/build/outputs/apk/debug/app-debug.apk
           retention-days: 1
-          timeout-minutes: 5
