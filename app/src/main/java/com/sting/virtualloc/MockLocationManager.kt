@@ -1,10 +1,16 @@
 package com.sting.virtualloc
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.location.Location
+import android.location.LocationListener
 import android.location.LocationManager
 import android.location.provider.ProviderProperties
 import android.os.Build
+import android.os.Bundle
+import android.os.Looper
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 /**
  * Wraps LocationManager.addTestProvider for mock location.
@@ -139,6 +145,57 @@ class MockLocationManager(private val context: Context) {
             false
         } catch (_: Exception) {
             false
+        }
+    }
+
+    /**
+     * Get the current real GPS location using LocationManager.
+     * Returns null if location cannot be retrieved.
+     * Uses a one-shot request with a short timeout.
+     */
+    @SuppressLint("MissingPermission")
+    fun getCurrentLocation(callback: (Double?, Double?) -> Unit) {
+        try {
+            // Try GPS provider first, then network
+            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            var received = false
+
+            for (provider in providers) {
+                if (!locationManager.isProviderEnabled(provider)) continue
+
+                val listener = object : LocationListener {
+                    override fun onLocationChanged(location: Location) {
+                        if (!received) {
+                            received = true
+                            locationManager.removeUpdates(this)
+                            callback(location.latitude, location.longitude)
+                        }
+                    }
+
+                    override fun onProviderEnabled(provider: String) {}
+                    override fun onProviderDisabled(provider: String) {}
+                    @Deprecated("Deprecated in API")
+                    override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+                }
+
+                // Request a single location update
+                locationManager.requestSingleUpdate(provider, listener, Looper.getMainLooper())
+
+                // Also try to get last known location as fallback
+                val lastKnown = locationManager.getLastKnownLocation(provider)
+                if (lastKnown != null && !received) {
+                    received = true
+                    locationManager.removeUpdates(listener)
+                    callback(lastKnown.latitude, lastKnown.longitude)
+                    return
+                }
+            }
+
+            if (!received) {
+                callback(null, null)
+            }
+        } catch (e: Exception) {
+            callback(null, null)
         }
     }
 }

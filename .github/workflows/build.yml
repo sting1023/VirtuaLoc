@@ -25,10 +25,9 @@ jobs:
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
 
-      - name: Generate keystore if not exists
+      - name: Generate keystore if not exists in app/
         run: |
           if [ ! -f app/keystore.jks ]; then
-            echo "Generating new keystore..."
             keytool -genkeypair -v -storetype JKS -keystore app/keystore.jks -alias appkey \
               -keyalg RSA -keysize 2048 -validity 10000 \
               -storepass VirtuaLoc2026 -keypass VirtuaLoc2026 \
@@ -45,7 +44,7 @@ jobs:
           git config --local user.email "bot@openclaw"
           git config --local user.name "bot"
           git add app/keystore.jks
-          git commit -m "chore: add keystore for signing (keep for app updates)"
+          git commit -m "chore: add keystore for signing"
           git push origin main
 
       - name: Make gradlew executable

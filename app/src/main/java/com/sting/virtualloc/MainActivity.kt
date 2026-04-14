@@ -1,7 +1,9 @@
 package com.sting.virtualloc
 
 import android.Manifest
+import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -13,10 +15,17 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,8 +37,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 import org.osmdroid.config.Configuration
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
@@ -51,20 +64,97 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+data class QuickSelectItem(
+    val name: String,
+    val lat: Double,
+    val lng: Double
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 data class UiState(
     val isRunning: Boolean = false,
-    val latText: String = "39.9042",
-    val lngText: String = "116.4074",
+    val latText: String = "",
+    val lngText: String = "",
     val devModeEnabled: Boolean = false,
     val hasLocationPermission: Boolean = false,
     val showDeveloperDialog: Boolean = false,
-    val statusMessage: String = "请输入坐标后点击「开启虚拟定位」"
+    val statusMessage: String = "请输入坐标后点击「开启虚拟定位」",
+    val quickSelectItems: List<QuickSelectItem> = emptyList(),
+    val showEditDialog: Boolean = false,
+    val editingItem: QuickSelectItem? = null,
+    val showAddDialog: Boolean = false,
+    val showGpsDialog: Boolean = false,
+    val gpsLoading: Boolean = false
 )
 
 class MainViewModel : ViewModel() {
     private val _state = MutableStateFlow(UiState())
     val state: StateFlow<UiState> = _state
+
+    private var prefs: SharedPreferences? = null
+    private var context: Context? = null
+
+    fun init(context: Context) {
+        this.context = context
+        prefs = context.getSharedPreferences("virtualloc_prefs", Context.MODE_PRIVATE)
+        loadState()
+    }
+
+    private fun loadState() {
+        val p = prefs ?: return
+        val lat = p.getString("last_lat", "") ?: ""
+        val lng = p.getString("last_lng", "") ?: ""
+        val items = loadQuickSelectItems(p)
+        _state.value = _state.value.copy(
+            latText = lat,
+            lngText = lng,
+            quickSelectItems = items
+        )
+    }
+
+    private fun loadQuickSelectItems(p: SharedPreferences): List<QuickSelectItem> {
+        val json = p.getString("quick_select_json", null)
+        if (json.isNullOrEmpty()) {
+            // First install: default to Beijing and Shanghai
+            return listOf(
+                QuickSelectItem("北京", 39.9042, 116.4074),
+                QuickSelectItem("上海", 31.2304, 121.4737)
+            )
+        }
+        return try {
+            val arr = JSONArray(json)
+            (0 until arr.length()).map { i ->
+                val obj = arr.getJSONObject(i)
+                QuickSelectItem(
+                    name = obj.getString("name"),
+                    lat = obj.getDouble("lat"),
+                    lng = obj.getDouble("lng")
+                )
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun saveQuickSelectItems(items: List<QuickSelectItem>) {
+        val p = prefs ?: return
+        val arr = JSONArray()
+        items.forEach { item ->
+            val obj = JSONObject().apply {
+                put("name", item.name)
+                put("lat", item.lat)
+                put("lng", item.lng)
+            }
+            arr.put(obj)
+        }
+        p.edit().putString("quick_select_json", arr.toString()).apply()
+        _state.value = _state.value.copy(quickSelectItems = items)
+    }
+
+    fun saveLastCoords(lat: String, lng: String) {
+        val p = prefs ?: return
+        p.edit().putString("last_lat", lat).putString("last_lng", lng).apply()
+    }
 
     fun updateLat(text: String) {
         _state.value = _state.value.copy(latText = text)
@@ -97,6 +187,78 @@ class MainViewModel : ViewModel() {
     fun hideDeveloperDialog() {
         _state.value = _state.value.copy(showDeveloperDialog = false)
     }
+
+    fun showEditDialog(item: QuickSelectItem) {
+        _state.value = _state.value.copy(showEditDialog = true, editingItem = item)
+    }
+
+    fun hideEditDialog() {
+        _state.value = _state.value.copy(showEditDialog = false, editingItem = null)
+    }
+
+    fun showAddDialog() {
+        _state.value = _state.value.copy(showAddDialog = true)
+    }
+
+    fun hideAddDialog() {
+        _state.value = _state.value.copy(showAddDialog = false)
+    }
+
+    fun showGpsDialog() {
+        _state.value = _state.value.copy(showGpsDialog = true)
+    }
+
+    fun hideGpsDialog() {
+        _state.value = _state.value.copy(showGpsDialog = false)
+    }
+
+    fun setGpsLoading(loading: Boolean) {
+        _state.value = _state.value.copy(gpsLoading = loading)
+    }
+
+    fun updateQuickSelectItem(oldItem: QuickSelectItem, newItem: QuickSelectItem) {
+        val items = _state.value.quickSelectItems.toMutableList()
+        val idx = items.indexOfFirst { it.name == oldItem.name && it.lat == oldItem.lat && it.lng == oldItem.lng }
+        if (idx >= 0) {
+            items[idx] = newItem
+            saveQuickSelectItems(items)
+        }
+        hideEditDialog()
+    }
+
+    fun deleteQuickSelectItem(item: QuickSelectItem) {
+        val items = _state.value.quickSelectItems.filterNot {
+            it.name == item.name && it.lat == item.lat && it.lng == item.lng
+        }
+        saveQuickSelectItems(items)
+        hideEditDialog()
+    }
+
+    fun addQuickSelectItem(item: QuickSelectItem) {
+        val items = _state.value.quickSelectItems + item
+        saveQuickSelectItems(items)
+        hideAddDialog()
+    }
+
+    fun addCurrentAsQuickSelect(name: String) {
+        val lat = _state.value.latText.toDoubleOrNull() ?: return
+        val lng = _state.value.lngText.toDoubleOrNull() ?: return
+        addQuickSelectItem(QuickSelectItem(name, lat, lng))
+    }
+
+    fun setGpsCoords(lat: Double, lng: Double) {
+        _state.value = _state.value.copy(
+            latText = "%.6f".format(lat),
+            lngText = "%.6f".format(lng),
+            gpsLoading = false,
+            showGpsDialog = false
+        )
+        saveLastCoords("%.6f".format(lat), "%.6f".format(lng))
+    }
+
+    fun setGpsError() {
+        _state.value = _state.value.copy(gpsLoading = false, showGpsDialog = false)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -105,6 +267,10 @@ fun MainScreen() {
     val context = LocalContext.current
     val vm = remember { MainViewModel() }
     val state by vm.state.collectAsState()
+
+    LaunchedEffect(Unit) {
+        vm.init(context)
+    }
 
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -172,7 +338,6 @@ fun MainScreen() {
             confirmButton = {
                 TextButton(onClick = {
                     vm.hideDeveloperDialog()
-                    // Open developer settings
                     try {
                         val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
                         context.startActivity(intent)
@@ -189,6 +354,34 @@ fun MainScreen() {
                     Text("知道了")
                 }
             }
+        )
+    }
+
+    // Dialog: Edit quick select item
+    if (state.showEditDialog && state.editingItem != null) {
+        EditQuickSelectDialog(
+            item = state.editingItem!!,
+            onDismiss = { vm.hideEditDialog() },
+            onSave = { newItem -> vm.updateQuickSelectItem(state.editingItem!!, newItem) },
+            onDelete = { vm.deleteQuickSelectItem(state.editingItem!!) }
+        )
+    }
+
+    // Dialog: Add quick select item
+    if (state.showAddDialog) {
+        AddQuickSelectDialog(
+            currentLat = state.latText,
+            currentLng = state.lngText,
+            onDismiss = { vm.hideAddDialog() },
+            onAdd = { vm.addQuickSelectItem(it) }
+        )
+    }
+
+    // Dialog: GPS capture name dialog
+    if (state.showGpsDialog) {
+        GpsCaptureDialog(
+            onDismiss = { vm.hideGpsDialog() },
+            onSave = { name -> vm.addCurrentAsQuickSelect(name) }
         )
     }
 
@@ -216,12 +409,6 @@ fun MainScreen() {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Status card
-            val statusColor = if (state.isRunning) {
-                MaterialTheme.colorScheme.primary
-            } else {
-                MaterialTheme.colorScheme.outline
-            }
-
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -275,11 +462,15 @@ fun MainScreen() {
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
                     value = state.latText,
-                    onValueChange = { vm.updateLat(it) },
+                    onValueChange = {
+                        vm.updateLat(it)
+                        vm.saveLastCoords(it, state.lngText)
+                    },
                     label = { Text("纬度 (-90~90)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f),
@@ -288,41 +479,122 @@ fun MainScreen() {
                 )
                 OutlinedTextField(
                     value = state.lngText,
-                    onValueChange = { vm.updateLng(it) },
+                    onValueChange = {
+                        vm.updateLng(it)
+                        vm.saveLastCoords(state.latText, it)
+                    },
                     label = { Text("经度 (-180~180)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     enabled = !state.isRunning
                 )
+                // GPS capture button with text
+                FilledTonalButton(
+                    onClick = {
+                        if (!state.hasLocationPermission) {
+                            vm.setStatus("需要位置权限")
+                            return@FilledTonalButton
+                        }
+                        vm.setGpsLoading(true)
+                        vm.setStatus("正在获取GPS坐标...")
+                        mockMgr.getCurrentLocation { lat, lng ->
+                            if (lat != null && lng != null) {
+                                vm.setGpsCoords(lat, lng)
+                                vm.setStatus("GPS坐标已获取: %.6f, %.6f".format(lat, lng))
+                            } else {
+                                vm.setGpsError()
+                                vm.setStatus("无法获取GPS坐标，请检查定位设置")
+                                Toast.makeText(context, "无法获取GPS坐标", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    enabled = !state.isRunning && !state.gpsLoading,
+                    modifier = Modifier.height(OutlinedTextFieldDefaults.MinHeight)
+                ) {
+                    if (state.gpsLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("获取中")
+                    } else {
+                        Icon(
+                            Icons.Default.MyLocation,
+                            contentDescription = "获取当前GPS",
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("获取经纬度")
+                    }
+                }
+                // Save button next to inputs
+                Button(
+                    onClick = {
+                        val lat = state.latText.toDoubleOrNull()
+                        val lng = state.lngText.toDoubleOrNull()
+                        if (lat != null && lng != null) {
+                            vm.showGpsDialog()
+                        } else {
+                            Toast.makeText(context, "请先输入有效坐标", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !state.isRunning
+                ) {
+                    Icon(
+                        Icons.Default.Save,
+                        contentDescription = "保存",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("保存")
+                }
             }
 
-            // Quick location buttons
+            // Quick select section
             Text(
                 text = "快速选择",
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold
             )
+
+            // Quick select chips row
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf(
-                    "北京" to Pair(39.9042, 116.4074),
-                    "上海" to Pair(31.2304, 121.4737),
-                    "纽约" to Pair(40.7128, -74.0060),
-                    "东京" to Pair(35.6762, 139.6503)
-                ).forEach { (name, coords) ->
-                    FilterChip(
-                        selected = false,
-                        onClick = {
+                // Existing quick select items
+                state.quickSelectItems.forEach { item ->
+                    EditableQuickSelectChip(
+                        item = item,
+                        onSelect = {
                             if (!state.isRunning) {
-                                vm.updateLat(coords.first.toString())
-                                vm.updateLng(coords.second.toString())
+                                vm.updateLat(item.lat.toString())
+                                vm.updateLng(item.lng.toString())
+                                vm.saveLastCoords(item.lat.toString(), item.lng.toString())
                             }
                         },
-                        label = { Text(name) },
+                        onEdit = { vm.showEditDialog(item) },
                         enabled = !state.isRunning
+                    )
+                }
+
+                // Add new quick select chip
+                if (!state.isRunning) {
+                    FilterChip(
+                        selected = false,
+                        onClick = { vm.showAddDialog() },
+                        label = { Text("+") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "添加",
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     )
                 }
             }
@@ -349,7 +621,6 @@ fun MainScreen() {
                             val lat = state.latText.toDoubleOrNull() ?: 39.9042
                             val lng = state.lngText.toDoubleOrNull() ?: 116.4074
                             mv.controller.setCenter(GeoPoint(lat, lng))
-                            // Create marker with proper map context
                             val m = Marker(mv)
                             m.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             mv.overlays.add(m)
@@ -384,14 +655,17 @@ fun MainScreen() {
 
                     if (lat == null || lng == null) {
                         vm.setStatus("请输入有效的经纬度")
+                        Toast.makeText(context, "请输入有效的经纬度", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     if (lat < -90 || lat > 90) {
                         vm.setStatus("纬度必须在 -90 到 90 之间")
+                        Toast.makeText(context, "纬度必须在 -90 到 90 之间", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
                     if (lng < -180 || lng > 180) {
                         vm.setStatus("经度必须在 -180 到 180 之间")
+                        Toast.makeText(context, "经度必须在 -180 到 180 之间", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
 
@@ -411,6 +685,7 @@ fun MainScreen() {
                         vm.setRunning(false)
                         vm.setStatus("已停止虚拟定位")
                     } else {
+                        vm.saveLastCoords(state.latText, state.lngText)
                         LocationService.start(context, lat, lng)
                         vm.setRunning(true)
                         vm.setStatus("虚拟定位已开启: %.6f, %.6f".format(lat, lng))
@@ -445,6 +720,213 @@ fun MainScreen() {
             )
         }
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun EditableQuickSelectChip(
+    item: QuickSelectItem,
+    onSelect: () -> Unit,
+    onEdit: () -> Unit,
+    enabled: Boolean
+) {
+    Box {
+        FilterChip(
+            selected = false,
+            onClick = onSelect,
+            label = { Text(item.name, maxLines = 1) },
+            enabled = enabled
+        )
+        IconButton(
+            onClick = onEdit,
+            modifier = Modifier
+                .size(24.dp)
+                .align(Alignment.TopEnd),
+            colors = IconButtonDefaults.iconButtonColors(
+                contentColor = MaterialTheme.colorScheme.primary
+            ),
+            enabled = enabled
+        ) {
+            Icon(
+                Icons.Default.Edit,
+                contentDescription = "编辑",
+                modifier = Modifier.size(12.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+fun EditQuickSelectDialog(
+    item: QuickSelectItem,
+    onDismiss: () -> Unit,
+    onSave: (QuickSelectItem) -> Unit,
+    onDelete: () -> Unit
+) {
+    var name by remember { mutableStateOf(item.name) }
+    var lat by remember { mutableStateOf(item.lat.toString()) }
+    var lng by remember { mutableStateOf(item.lng.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑快捷位置", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = lat,
+                    onValueChange = { lat = it },
+                    label = { Text("纬度") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = lng,
+                    onValueChange = { lng = it },
+                    label = { Text("经度") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val newLat = lat.toDoubleOrNull() ?: return@TextButton
+                    val newLng = lng.toDoubleOrNull() ?: return@TextButton
+                    onSave(QuickSelectItem(name.ifBlank { "未命名" }, newLat, newLng))
+                }
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("删除")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("取消")
+                }
+            }
+        }
+    )
+}
+
+@Composable
+fun AddQuickSelectDialog(
+    currentLat: String,
+    currentLng: String,
+    onDismiss: () -> Unit,
+    onAdd: (QuickSelectItem) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    var lat by remember { mutableStateOf(currentLat) }
+    var lng by remember { mutableStateOf(currentLng) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("添加快捷位置", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("例如: 公司、家") }
+                )
+                OutlinedTextField(
+                    value = lat,
+                    onValueChange = { lat = it },
+                    label = { Text("纬度") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = lng,
+                    onValueChange = { lng = it },
+                    label = { Text("经度") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val newLat = lat.toDoubleOrNull() ?: return@TextButton
+                    val newLng = lng.toDoubleOrNull() ?: return@TextButton
+                    onAdd(QuickSelectItem(name.ifBlank { "未命名" }, newLat, newLng))
+                }
+            ) {
+                Text("添加")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}
+
+@Composable
+fun GpsCaptureDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("保存当前位置", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("GPS坐标已获取，请输入名称保存为快捷位置")
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名称") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("例如: 当前所在位置") }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(name.ifBlank { "当前位置" })
+                    onDismiss()
+                }
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("跳过")
+            }
+        }
+    )
 }
 
 @Composable
