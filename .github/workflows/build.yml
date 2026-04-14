@@ -1,12 +1,7 @@
 name: Build APK
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
@@ -19,31 +14,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
 
-      - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon
-
-      - name: Find APK files
+      - name: Build
         run: |
-          echo "=== Looking for APK files ==="
-          find . -name "*.apk" -type f 2>/dev/null
-          echo "=== app/build/outputs ==="
-          ls -la app/build/outputs/ 2>/dev/null || echo "No outputs dir"
-          echo "=== app/build/outputs/apk ==="
-          ls -la app/build/outputs/apk/ 2>/dev/null || echo "No apk dir"
-          echo "=== app/build/outputs/apk/debug ==="
-          ls -la app/build/outputs/apk/debug/ 2>/dev/null || echo "No debug dir"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
-      - name: Upload Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: virtualloc-debug
-          path: app/build/outputs/apk/debug
-          retention-days: 1
+          name: virtualloc
+          path: app/build/outputs/apk/debug/app-debug.apk
