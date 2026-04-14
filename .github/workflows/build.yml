@@ -20,11 +20,9 @@ jobs:
       - name: Build
         run: |
           Remove-Item local.properties -ErrorAction SilentlyContinue
-          if ($env:ANDROID_SDK_ROOT) {
-            "sdk.dir=$env:ANDROID_SDK_ROOT" | Out-File -FilePath local.properties -Encoding ASCII
-          }
-          Get-Content local.properties -ErrorAction SilentlyContinue
-          cmd /c "gradlew.bat assembleDebug --no-daemon"
+          "sdk.dir=C:\Android\android-sdk" | Out-File -FilePath local.properties -Encoding ASCII
+          Get-Content local.properties
+          cmd /c gradlew.bat assembleDebug --no-daemon
         shell: powershell
 
       - uses: actions/upload-artifact@v4
