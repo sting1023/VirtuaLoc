@@ -443,8 +443,8 @@ fun MainScreen() {
             vm.setLastSnapshot(snapshot)
             vm.setStatus(buildString {
                 append("GPS坐标已获取: %.6f, %.6f".format(lat, lng))
-                if (cellCount > 0) append("，基站$cellCount个")
-                if (wifiCount > 0) append("，WiFi$wifiCount个")
+                if (cellCount > 0) append("，基站${cellCount}个")
+                if (wifiCount > 0) append("，WiFi${wifiCount}个")
             })
             vm.clearGpsCoordsJustSet()
         }
