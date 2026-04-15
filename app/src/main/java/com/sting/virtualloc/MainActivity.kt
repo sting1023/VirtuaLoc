@@ -488,7 +488,7 @@ fun MainScreen() {
                         },
                         label = { Text("纬度 (-90~90)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         singleLine = true
                     )
                     OutlinedTextField(
@@ -499,7 +499,7 @@ fun MainScreen() {
                         },
                         label = { Text("经度 (-180~180)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).fillMaxWidth(),
                         singleLine = true
                     )
                 }
