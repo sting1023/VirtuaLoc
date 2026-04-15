@@ -72,7 +72,10 @@ class MainActivity : ComponentActivity() {
 data class QuickSelectItem(
     val name: String,
     val lat: Double,
-    val lng: Double
+    val lng: Double,
+    val cells: List<CellInfoData> = emptyList(),
+    val wifis: List<WifiInfoData> = emptyList(),
+    val accuracy: Float = 0f
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,7 +92,11 @@ data class UiState(
     val editingItem: QuickSelectItem? = null,
     val showAddDialog: Boolean = false,
     val showGpsDialog: Boolean = false,
-    val gpsLoading: Boolean = false
+    val gpsLoading: Boolean = false,
+    // Last captured location snapshot (GPS + cells + wifi)
+    val lastSnapshot: LocationSnapshot? = null,
+    // True when GPS coords just arrived and snapshot collection is pending
+    val gpsCoordsJustSet: Boolean = false
 )
 
 class MainViewModel : ViewModel() {
@@ -133,10 +140,50 @@ class MainViewModel : ViewModel() {
                 QuickSelectItem(
                     name = obj.getString("name"),
                     lat = obj.getDouble("lat"),
-                    lng = obj.getDouble("lng")
+                    lng = obj.getDouble("lng"),
+                    accuracy = obj.optDouble("accuracy", 0.0).toFloat(),
+                    cells = parseCellList(obj.optJSONArray("cells")),
+                    wifis = parseWifiList(obj.optJSONArray("wifis"))
                 )
             }
         } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun parseCellList(arr: JSONArray?): List<CellInfoData> {
+        if (arr == null) return emptyList()
+        return try {
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                CellInfoData(
+                    cid = o.getInt("cid"),
+                    lac = o.getInt("lac"),
+                    mcc = o.getInt("mcc"),
+                    mnc = o.getInt("mnc"),
+                    pci = o.optInt("pci", -1),
+                    rsrp = o.optInt("rsrp", -1),
+                    type = o.optString("type", "unknown")
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    private fun parseWifiList(arr: JSONArray?): List<WifiInfoData> {
+        if (arr == null) return emptyList()
+        return try {
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                WifiInfoData(
+                    bssid = o.optString("bssid", ""),
+                    ssid = o.optString("ssid", ""),
+                    rssi = o.optInt("rssi", -1),
+                    frequency = o.optInt("frequency", -1)
+                )
+            }
+        } catch (_: Exception) {
             emptyList()
         }
     }
@@ -149,11 +196,43 @@ class MainViewModel : ViewModel() {
                 put("name", item.name)
                 put("lat", item.lat)
                 put("lng", item.lng)
+                put("accuracy", item.accuracy.toDouble())
+                put("cells", cellListToJson(item.cells))
+                put("wifis", wifiListToJson(item.wifis))
             }
             arr.put(obj)
         }
         p.edit().putString("quick_select_json", arr.toString()).apply()
         _state.value = _state.value.copy(quickSelectItems = items)
+    }
+
+    private fun cellListToJson(cells: List<CellInfoData>): JSONArray {
+        val arr = JSONArray()
+        cells.forEach { c ->
+            arr.put(JSONObject().apply {
+                put("cid", c.cid)
+                put("lac", c.lac)
+                put("mcc", c.mcc)
+                put("mnc", c.mnc)
+                put("pci", c.pci)
+                put("rsrp", c.rsrp)
+                put("type", c.type)
+            })
+        }
+        return arr
+    }
+
+    private fun wifiListToJson(wifis: List<WifiInfoData>): JSONArray {
+        val arr = JSONArray()
+        wifis.forEach { w ->
+            arr.put(JSONObject().apply {
+                put("bssid", w.bssid)
+                put("ssid", w.ssid)
+                put("rssi", w.rssi)
+                put("frequency", w.frequency)
+            })
+        }
+        return arr
     }
 
     fun saveLastCoords(lat: String, lng: String) {
@@ -245,10 +324,18 @@ class MainViewModel : ViewModel() {
         hideAddDialog()
     }
 
-    fun addCurrentAsQuickSelect(name: String) {
+    fun addCurrentAsQuickSelect(name: String, snapshot: LocationSnapshot? = null) {
         val lat = _state.value.latText.toDoubleOrNull() ?: return
         val lng = _state.value.lngText.toDoubleOrNull() ?: return
-        addQuickSelectItem(QuickSelectItem(name, lat, lng))
+        val item = QuickSelectItem(
+            name = name,
+            lat = lat,
+            lng = lng,
+            accuracy = snapshot?.accuracy ?: 0f,
+            cells = snapshot?.cells ?: emptyList(),
+            wifis = snapshot?.wifis ?: emptyList()
+        )
+        addQuickSelectItem(item)
     }
 
     fun setGpsCoords(lat: Double, lng: Double) {
@@ -263,6 +350,18 @@ class MainViewModel : ViewModel() {
 
     fun setGpsError() {
         _state.value = _state.value.copy(gpsLoading = false, showGpsDialog = false)
+    }
+
+    fun setLastSnapshot(snapshot: LocationSnapshot?) {
+        _state.value = _state.value.copy(lastSnapshot = snapshot)
+    }
+
+    fun setGpsCoordsJustSet() {
+        _state.value = _state.value.copy(gpsCoordsJustSet = true)
+    }
+
+    fun clearGpsCoordsJustSet() {
+        _state.value = _state.value.copy(gpsCoordsJustSet = false)
     }
 }
 
@@ -317,6 +416,7 @@ fun MainScreen() {
 
     // Check dev mode
     val mockMgr = remember { MockLocationManager(context) }
+    val locationCollector = remember { LocationCollector(context) }
     // Re-check mock location when app resumes (handles user enabling it in developer settings)
     DisposableEffect(Unit) {
         val observer = LifecycleEventObserver { _, event ->
@@ -329,6 +429,24 @@ fun MainScreen() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(observer)
         onDispose {
             ProcessLifecycleOwner.get().lifecycle.removeObserver(observer)
+        }
+    }
+
+    // When GPS coords are set, also collect cell + wifi snapshot
+    LaunchedEffect(state.gpsCoordsJustSet, state.latText, state.lngText) {
+        if (state.gpsCoordsJustSet) {
+            val lat = state.latText.toDoubleOrNull() ?: return@LaunchedEffect
+            val lng = state.lngText.toDoubleOrNull() ?: return@LaunchedEffect
+            val snapshot = locationCollector.collectSnapshot(lat, lng, 0f)
+            val cellCount = snapshot.cells.size
+            val wifiCount = snapshot.wifis.size
+            vm.setLastSnapshot(snapshot)
+            vm.setStatus(buildString {
+                append("GPS坐标已获取: %.6f, %.6f".format(lat, lng))
+                if (cellCount > 0) append("，基站$cellCount个")
+                if (wifiCount > 0) append("，WiFi$wifiCount个")
+            })
+            vm.clearGpsCoordsJustSet()
         }
     }
 
@@ -405,7 +523,9 @@ fun MainScreen() {
     if (state.showGpsDialog) {
         GpsCaptureDialog(
             onDismiss = { vm.hideGpsDialog() },
-            onSave = { name -> vm.addCurrentAsQuickSelect(name) }
+            onSave = { name -> vm.addCurrentAsQuickSelect(name, state.lastSnapshot) },
+            cellCount = state.lastSnapshot?.cells?.size ?: 0,
+            wifiCount = state.lastSnapshot?.wifis?.size ?: 0
         )
     }
 
@@ -553,11 +673,11 @@ fun MainScreen() {
                                 return@FilledTonalButton
                             }
                             vm.setGpsLoading(true)
-                            vm.setStatus("正在获取GPS坐标...")
+                            vm.setStatus("正在获取GPS坐标和周边信号...")
                             mockMgr.getCurrentLocation { lat, lng ->
                                 if (lat != null && lng != null) {
                                     vm.setGpsCoords(lat, lng)
-                                    vm.setStatus("GPS坐标已获取: %.6f, %.6f".format(lat, lng))
+                                    vm.setGpsCoordsJustSet()
                                 } else {
                                     vm.setGpsError()
                                     vm.setStatus("无法获取GPS坐标，请检查定位设置")
@@ -931,7 +1051,9 @@ fun AddQuickSelectDialog(
 @Composable
 fun GpsCaptureDialog(
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit
+    onSave: (String) -> Unit,
+    cellCount: Int = 0,
+    wifiCount: Int = 0
 ) {
     var name by remember { mutableStateOf("") }
 
@@ -941,6 +1063,17 @@ fun GpsCaptureDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("GPS坐标已获取，请输入名称保存为快捷位置")
+                if (cellCount > 0 || wifiCount > 0) {
+                    Text(
+                        text = buildString {
+                            if (cellCount > 0) append("📡 基站: $cellCount 个")
+                            if (cellCount > 0 && wifiCount > 0) append("  ")
+                            if (wifiCount > 0) append("📶 WiFi: $wifiCount 个")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
