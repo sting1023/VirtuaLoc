@@ -37,6 +37,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -313,9 +315,18 @@ fun MainScreen() {
 
     // Check dev mode
     val mockMgr = remember { MockLocationManager(context) }
-    LaunchedEffect(state.hasLocationPermission) {
-        if (state.hasLocationPermission) {
-            vm.setDevModeEnabled(mockMgr.isDeveloperMockEnabled())
+    // Re-check mock location when app resumes (handles user enabling it in developer settings)
+    DisposableEffect(Unit) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                if (state.hasLocationPermission) {
+                    vm.setDevModeEnabled(mockMgr.isDeveloperMockEnabled())
+                }
+            }
+        }
+        LocalLifecycleOwner.current.lifecycle.addObserver(observer)
+        onDispose {
+            LocalLifecycleOwner.current.lifecycle.removeObserver(observer)
         }
     }
 
