@@ -317,19 +317,15 @@ fun MainScreen() {
     // Check dev mode
     val mockMgr = remember { MockLocationManager(context) }
     // Re-check mock location when app resumes (handles user enabling it in developer settings)
-    val lifecycle = remember { LocalLifecycleOwner.current.lifecycle }
-    DisposableEffect(Unit) {
-        val observer = LifecycleEventObserver { _, event ->
+    LaunchedEffect(Unit) {
+        val lifecycle = LocalLifecycleOwner.current.lifecycle
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 if (state.hasLocationPermission) {
                     vm.setDevModeEnabled(mockMgr.isDeveloperMockEnabled())
                 }
             }
-        }
-        lifecycle.addObserver(observer)
-        onDispose {
-            lifecycle.removeObserver(observer)
-        }
+        })
     }
 
     // Get version info
