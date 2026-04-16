@@ -83,7 +83,7 @@ data class UiState(
     val isRunning: Boolean = false,
     val latText: String = "",
     val lngText: String = "",
-    val devModeEnabled: Boolean = false,
+    val devModeEnabled: Boolean = true,
     val hasLocationPermission: Boolean = false,
     val showDeveloperDialog: Boolean = false,
     val statusMessage: String = "请输入坐标后点击「开启虚拟定位」",
@@ -577,27 +577,6 @@ fun MainScreen() {
                 }
             }
 
-            // Dev mode warning
-            if (!state.devModeEnabled) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.errorContainer
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("⚠️ 未检测到模拟位置权限")
-                        Spacer(modifier = Modifier.weight(1f))
-                        TextButton(onClick = { vm.showDeveloperDialog() }) {
-                            Text("开启教程")
-                        }
-                    }
-                }
-            }
-
             // Coordinate inputs
             Text(
                 text = "目标坐标",
@@ -827,12 +806,6 @@ fun MainScreen() {
                     if (lng < -180 || lng > 180) {
                         vm.setStatus("经度必须在 -180 到 180 之间")
                         Toast.makeText(context, "经度必须在 -180 到 180 之间", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-
-                    if (!state.devModeEnabled) {
-                        vm.setStatus("请先开启开发者模拟位置（见帮助）")
-                        vm.showDeveloperDialog()
                         return@Button
                     }
 
