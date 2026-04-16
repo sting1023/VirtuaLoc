@@ -284,44 +284,15 @@ class MainViewModel : ViewModel() {
     }
 
     fun runInitSteps() {
-        viewModelScope.launch {
-            val pkg = "com.sting.virtualloc"
-
-            fun appendLog(msg: String) {
-                _state.value = _state.value.copy(initLog = _state.value.initLog + msg + "\n")
-            }
-
-            fun setStep(s: Int) {
-                _state.value = _state.value.copy(initStep = s)
-            }
-
-            try {
-                setStep(1)
-                appendLog("➊ 授予模拟定位权限...")
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "cmd appops set $pkg android:mock_location allow")).waitFor()
-                appendLog("    ✓ 权限授予成功")
-
-                setStep(2)
-                appendLog("➋ 关闭开发者选项...")
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "settings put global development_enabled 0")).waitFor()
-                appendLog("    ✓ 开发者选项已关闭")
-
-                setStep(3)
-                appendLog("➌ 设置模拟定位应用...")
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "settings put secure mock_location_app $pkg")).waitFor()
-                appendLog("    ✓ 模拟定位应用设置成功")
-
-                setStep(4)
-                appendLog("➍ 重启手机...")
-                appendLog("    重启后VirtuaLoc即可独立使用")
-                Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot")).waitFor()
-
-                setStep(5)
-            } catch (e: Exception) {
-                appendLog("    ✗ 失败: ${e.message}")
-                setStep(99)
-            }
-        }
+        _state.value = _state.value.copy(
+            initStep = 1,
+            initLog = "请在电脑终端依次执行以下命令：\n\n" +
+                "  adb shell cmd appops set com.sting.virtualloc android:mock_location allow\n" +
+                "  adb shell settings put global development_enabled 0\n" +
+                "  adb shell settings put secure mock_location_app com.sting.virtualloc\n" +
+                "  adb reboot\n\n" +
+                "执行完成后，即使关闭开发者选项，VirtuaLoc 也能正常使用。"
+        )
     }
 
     fun showEditDialog(item: QuickSelectItem) {
