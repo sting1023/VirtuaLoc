@@ -293,7 +293,7 @@ class MainViewModel : ViewModel() {
     }
 
     fun hideGpsDialog() {
-        _state.value = _state.value.copy(showGpsDialog = false)
+        _state.value = _state.value.copy(showGpsDialog = false, lastSnapshot = null)
     }
 
     fun setGpsLoading(loading: Boolean) {
@@ -343,7 +343,8 @@ class MainViewModel : ViewModel() {
             latText = "%.6f".format(lat),
             lngText = "%.6f".format(lng),
             gpsLoading = false,
-            showGpsDialog = false
+            showGpsDialog = true,
+            lastSnapshot = null
         )
         saveLastCoords("%.6f".format(lat), "%.6f".format(lng))
     }
@@ -519,8 +520,8 @@ fun MainScreen() {
         )
     }
 
-    // Dialog: GPS capture name dialog
-    if (state.showGpsDialog) {
+    // Dialog: GPS capture name dialog (show when GPS captured OR when snapshot is ready)
+    if (state.showGpsDialog || state.lastSnapshot != null) {
         GpsCaptureDialog(
             onDismiss = { vm.hideGpsDialog() },
             onSave = { name -> vm.addCurrentAsQuickSelect(name, state.lastSnapshot) },
