@@ -86,6 +86,9 @@ data class UiState(
     val devModeEnabled: Boolean = true,
     val hasLocationPermission: Boolean = false,
     val showDeveloperDialog: Boolean = false,
+    val showInitDialog: Boolean = false,
+    val initStep: Int = 0,         // 0=未开始, 1~5=执行中, 6=完成
+    val initLog: String = "",     // 每一步的执行结果
     val statusMessage: String = "请输入坐标后点击「开启虚拟定位」",
     val quickSelectItems: List<QuickSelectItem> = emptyList(),
     val showEditDialog: Boolean = false,
@@ -270,6 +273,55 @@ class MainViewModel : ViewModel() {
 
     fun hideDeveloperDialog() {
         _state.value = _state.value.copy(showDeveloperDialog = false)
+    }
+
+    fun showInitDialog() {
+        _state.value = _state.value.copy(showInitDialog = true, initStep = 0, initLog = "")
+    }
+
+    fun hideInitDialog() {
+        _state.value = _state.value.copy(showInitDialog = false, initStep = 0, initLog = "")
+    }
+
+    fun runInitSteps() {
+        viewModelScope.launch {
+            val pkg = "com.sting.virtualloc"
+
+            fun appendLog(msg: String) {
+                _state.value = _state.value.copy(initLog = _state.value.initLog + msg + "\n")
+            }
+
+            fun setStep(s: Int) {
+                _state.value = _state.value.copy(initStep = s)
+            }
+
+            try {
+                setStep(1)
+                appendLog("➊ 授予模拟定位权限...")
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "cmd appops set $pkg android:mock_location allow")).waitFor()
+                appendLog("    ✓ 权限授予成功")
+
+                setStep(2)
+                appendLog("➋ 关闭开发者选项...")
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "settings put global development_enabled 0")).waitFor()
+                appendLog("    ✓ 开发者选项已关闭")
+
+                setStep(3)
+                appendLog("➌ 设置模拟定位应用...")
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "settings put secure mock_location_app $pkg")).waitFor()
+                appendLog("    ✓ 模拟定位应用设置成功")
+
+                setStep(4)
+                appendLog("➍ 重启手机...")
+                appendLog("    重启后VirtuaLoc即可独立使用")
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "reboot")).waitFor()
+
+                setStep(5)
+            } catch (e: Exception) {
+                appendLog("    ✗ 失败: ${e.message}")
+                setStep(99)
+            }
+        }
     }
 
     fun showEditDialog(item: QuickSelectItem) {
@@ -500,6 +552,16 @@ fun MainScreen() {
         )
     }
 
+    // Dialog: 一键初始化（永久开启模拟定位）
+    if (state.showInitDialog) {
+        InitDialog(
+            step = state.initStep,
+            log = state.initLog,
+            onDismiss = { vm.hideInitDialog() },
+            onStart = { vm.runInitSteps() }
+        )
+    }
+
     // Dialog: Edit quick select item
     if (state.showEditDialog && state.editingItem != null) {
         EditQuickSelectDialog(
@@ -540,6 +602,9 @@ fun MainScreen() {
                 actions = {
                     TextButton(onClick = { vm.showDeveloperDialog() }) {
                         Text("帮助")
+                    }
+                    TextButton(onClick = { vm.showInitDialog() }) {
+                        Text("初始化")
                     }
                 }
             )
@@ -1018,6 +1083,64 @@ fun AddQuickSelectDialog(
             TextButton(onClick = onDismiss) {
                 Text("取消")
             }
+        }
+    )
+}
+
+@Composable
+fun InitDialog(
+    step: Int,
+    log: String,
+    onDismiss: () -> Unit,
+    onStart: () -> Unit
+) {
+    val stepLabels = mapOf(
+        0 to "",
+        1 to "➊ 授予模拟定位权限",
+        2 to "➋ 关闭开发者选项",
+        3 to "➌ 设置模拟定位应用",
+        4 to "➍ 重启手机中...",
+        5 to "✓ 完成",
+        99 to "✗ 出错"
+    )
+
+    AlertDialog(
+        onDismissRequest = {
+            if (step == 0 || step == 5 || step == 99) onDismiss()
+        },
+        title = { Text("永久开启模拟定位", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (step == 0) {
+                    Text("本功能将自动完成以下步骤：")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("① 授予 VirtuaLoc 模拟定位权限")
+                    Text("② 关闭开发者选项")
+                    Text("③ 将 VirtuaLoc 设为默认模拟定位应用")
+                    Text("④ 重启手机")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text("执行完成后，即使关闭开发者选项，VirtuaLoc 也能正常使用。", color = MaterialTheme.colorScheme.outline)
+                } else {
+                    Text(stepLabels[step] ?: "", fontWeight = FontWeight.Bold)
+                    if (log.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(log, style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (step == 4) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("手机即将重启，请稍候...", color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            when (step) {
+                0 -> TextButton(onClick = onStart) { Text("开始执行") }
+                5, 99 -> TextButton(onClick = onDismiss) { Text("关闭") }
+            }
+        },
+        dismissButton = {
+            if (step == 0) TextButton(onClick = onDismiss) { Text("取消") }
         }
     )
 }
